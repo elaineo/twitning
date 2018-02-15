@@ -1,4 +1,4 @@
-from tweet import TweetClient
+from faucet import FaucetClient
 import config as cfg
 
 from db import LightningDB
@@ -104,7 +104,40 @@ class LightningWrapper:
            logging.error(e)
            return e.details()
         
+    def open_faucet(self, node_id, satoshis=10000, balance=2000):
+        try:
+            request = ln.OpenChannelRequest(
+                node_pubkey_string=node_id,
+                local_funding_amount=min(satoshis, cfg.CHANNEL_AMOUNT),
+                push_sat=min(balance, cfg.FAUCET_AMOUNT)
+            )
+            response = self.stub.OpenChannelSync(request)
+            logging.info(response)
+            if response.funding_txid_str:
+                r = response.funding_txid_str
+            else:
+                r = MessageToJson(response) 
+            if satoshis > cfg.CHANNEL_AMOUNT or balance > cfg.FAUCET_AMOUNT:
+                return "Max Channel Size: %d \nMax Faucet Payout: %d \n%s" \
+                    % (cfg.CHANNEL_AMOUNT, cfg.FAUCET_AMOUNT, r)
+            else: 
+                return r
+        except grpc.RpcError as e:
+           logging.error(e)
+           return e.details()
 
+    def get_balance(self):
+        try:
+            request = ln.WalletBalanceRequest()
+            wallet = self.stub.WalletBalance(request)
+            logging.info(wallet)
+            request = ln.ChannelBalanceRequest()
+            channel = self.stub.ChannelBalance(request)
+            logging.info(channel)
+            return "WalletBalance: %s \nChannelBalance: %s" % (wallet.confirmed_balance, channel.balance)
+        except grpc.RpcError as e:
+           logging.error(e)
+           return e.details()
 
 def main():
     logging.basicConfig(level=logging.INFO)
@@ -116,7 +149,7 @@ def main():
 
     db = LightningDB(cfg.DB_PATH)
 
-    tweet = TweetClient(cfg.twitter, db, cfg.twitter_owner, lnclient)
+    tweet = FaucetClient(cfg.twitter, db, cfg.twitter_owner, lnclient)
     tweet.watch()
 
 if __name__ == "__main__":
